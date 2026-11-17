@@ -205,6 +205,88 @@ export function StickerPicker({ onPick }) {
   );
 }
 
+/* ---------- drag & drop media ---------- */
+export const MEDIA_LIMITS = { image: 5 * 1024 * 1024, video: 50 * 1024 * 1024 };
+
+export function splitMedia(files) {
+  const items = [];
+  let error = null;
+  for (const f of Array.from(files || [])) {
+    const kind = f.type?.startsWith("image/") ? "image" : f.type?.startsWith("video/") ? "video" : null;
+    if (!kind) { error = error || "Only images and videos can be sent"; continue; }
+    if (f.size > MEDIA_LIMITS[kind]) { error = kind === "image" ? "Image > 5MB" : "Video > 50MB"; continue; }
+    items.push({ kind, file: f });
+  }
+  return { items, error };
+}
+
+export function useFileDrop(onFiles) {
+  const [dragging, setDragging] = useState(false);
+  const depth = useRef(0);
+  const cb = useRef(onFiles);
+  cb.current = onFiles;
+
+  useEffect(() => {
+    const prevent = (e) => e.preventDefault();
+    window.addEventListener("dragover", prevent);
+    window.addEventListener("drop", prevent);
+    return () => {
+      window.removeEventListener("dragover", prevent);
+      window.removeEventListener("drop", prevent);
+    };
+  }, []);
+
+  const hasFiles = (e) => Array.from(e.dataTransfer?.types || []).includes("Files");
+  const dropProps = {
+    onDragEnter: (e) => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      depth.current++;
+      setDragging(true);
+    },
+    onDragOver: (e) => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "copy";
+    },
+    onDragLeave: (e) => {
+      if (!hasFiles(e)) return;
+      depth.current = Math.max(0, depth.current - 1);
+      if (!depth.current) setDragging(false);
+    },
+    onDrop: (e) => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      depth.current = 0;
+      setDragging(false);
+      if (e.dataTransfer.files?.length) cb.current(e.dataTransfer.files);
+    },
+  };
+  return { dragging, dropProps };
+}
+
+export function DropOverlay() {
+  return (
+    <div
+      style={{
+        position: "fixed", inset: 0, zIndex: 4000, pointerEvents: "none",
+        background: "rgba(11,20,26,.6)", display: "flex", alignItems: "center", justifyContent: "center",
+      }}
+    >
+      <div
+        style={{
+          border: "3px dashed #25d366", borderRadius: 18, padding: "40px 56px", textAlign: "center",
+          color: "#fff", background: "rgba(0,0,0,.35)",
+        }}
+      >
+        <i className="fas fa-images" style={{ fontSize: 46, display: "block", marginBottom: 14, color: "#25d366" }} />
+        <div style={{ fontSize: 18, fontWeight: 600 }}>Drop images or videos to send</div>
+        <div style={{ fontSize: 13, opacity: 0.8, marginTop: 6 }}>Preview opens before sending</div>
+      </div>
+    </div>
+  );
+}
+
 /* ---------- media composer (preview + caption) ---------- */
 export function MediaComposer({ kind, file, onSend, onCancel, sending }) {
   const [caption, setCaption] = useState("");
